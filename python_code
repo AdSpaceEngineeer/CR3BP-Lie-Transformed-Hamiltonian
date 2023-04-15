@@ -1,0 +1,213 @@
+#import packages
+
+import numpy as np
+import math
+import matplotlib.pyplot as plt
+
+#given conditions
+
+a0 = 1
+e0 = 0.5
+i0 = 45*math.pi/180
+t0 = 0
+aop0 = 0 #argument of periapse
+om0 = 0 #right acsension of ascending node
+M0 = 0 #mean anomaly
+mu = 1 #gravitational parameter normalised to unity
+w = 0.01 #angular speed of the rotating frame
+
+#classic variables to delaunay variables
+
+#function for L. Its conjugate angle variable is l = Mean Anomaly 'M'
+def func_L(a):
+    return (mu*a)**0.5 
+
+#function for G. Its conjugate angle variable is g = Argument of Periapse 'aop' 
+def func_G(L, e):
+    return L*(1-e**2)**0.5 #
+
+#function for H. Its conjugate angle variable is h = RAAN 'om'
+def func_H(G, i):
+    return G*math.cos(i)
+
+
+#delaunay variables to J'amiltonian variables
+#J'(L',_, _, _, _, _)
+
+def func_L_prime(L, H):
+    return L + 2*w*H*L**2
+
+# G_prime = G
+
+# H_prime = H
+
+def func_l_prime(l, H, L, M0):
+    l0 = M0
+    return l - 4*w*H*L*(l - l0)
+
+# g_prime = g
+
+def func_h_prime(h, L, l, M0):
+    l0 = M0
+    return h - 2*w*L**2*(l - l0)
+
+#equations of motion in J' variables
+
+L = func_L(a0)
+G = func_G(L, e0)
+H = func_H(G, i0)
+
+L_prime = func_L_prime(L, H) #EOM1
+
+G_prime = G #EOM2
+ 
+H_prime = H #EOM3
+
+def func_l_prime_time(L, t, M0): #EOM4
+    l0 = M0
+    l0_prime = func_l_prime(l0, H, L, M0)
+    return (1/(2*L**2))*(t - t0) + l0_prime
+
+def func_l(l_prime):
+    l0 = M0
+    l0_prime = func_l_prime(l0, H, L, M0)
+    return l_prime + 4*w*H_prime*L_prime*(l_prime - l0_prime)
+
+g = aop0
+g_prime = g #EOM5
+
+h0 = om0
+l0 = M0
+h_prime0 = func_h_prime(h0, L, l0, M0)
+h_prime = h_prime0 #EOM6
+
+
+#J'amiltonian variables to classic variables
+
+#a
+L = L_prime - 2*w*H_prime*L_prime**2
+a = L**2/mu
+
+#e
+G = G_prime
+e = (1-G**2/L**2)**0.5
+
+#i
+H = H_prime
+i = math.acos(H/G)
+
+#raan = h = h' + 2wL'^2(l' - l0')
+def func_raan(h_prime0, L_prime, l_prime, l0, H, L, M0):
+    h_prime = h_prime0
+    l0_prime = func_l_prime(l0, H, L, M0)
+    return h_prime + 2*w*L_prime**2*(l_prime - l0_prime)
+
+# aop = g = g_prime
+aop = g_prime
+
+#M = l = l' + 4wH'L'(l' - l0')
+def func_M(l_prime, H_prime, L_prime, l0, H, L, M0):
+    l0_prime = func_l_prime(l0, H, L, M0)
+    return l_prime + 4*w*H_prime*L_prime*(l_prime - l0_prime)
+    
+#Mean anomaly to Eccentric anomaly
+def M_to_Eccen(M, e, tol = 1e-10, n=20): 
+    i = 0
+    delta = 1
+    Ei = (M + e/2) if M < math.pi else (M - e/2)
+    while abs(delta)>tol and i<=n:
+        delta = (Ei - e*math.sin(Ei) - M)/(1-e*math.cos(Ei))
+        Ei = Ei - delta
+        i+=1
+    return Ei   
+
+#Eccentric anomaly to true anomaly
+def Eccen_to_f(E, e): 
+    return 2*math.atan((np.sqrt((1+e)/(1-e)))*math.tan(E/2))
+
+
+#converting orbital elements to position and velocity vectors
+    
+def r_scal_using_a(a, e, f):
+    return a*(1-e**2)/(1+e*math.cos(f))
+
+def r_vec_peri(r_scal, f):
+    return r_scal*np.array([math.cos(f), math.sin(f), 0])
+
+#def v_vec_peri(h, e, f):
+    #return (mu/h)*np.array([-math.sin(f), e+math.cos(f), 0])
+
+def R3_w(w):
+    return np.array([[math.cos(w), math.sin(w), 0],[-math.sin(w), math.cos(w), 0],[0,0,1]])
+
+def R1_i(i):
+    return np.array([[1,0,0],[0, math.cos(i), math.sin(i)],[0, -math.sin(i), math.cos(i)]])
+
+def R3_om(om):
+    return np.array([[math.cos(om), math.sin(om), 0],[-math.sin(om), math.cos(om), 0],[0,0,1]])
+
+def peri_to_geo_cosmatrix(R3w, R1i, R3om):
+    n = np.matmul(R3w, R1i)
+    cosmat_geo_to_peri = np.matmul(n, R3om)
+    cosmat_peri_to_geo = cosmat_geo_to_peri.transpose()
+    return cosmat_peri_to_geo 
+
+def r_geo_vec(cosmat_peri_to_geo, r_vec_peri):
+    return np.matmul(cosmat_peri_to_geo, r_vec_peri)
+
+r_vec_array = []
+
+for t in range(100):
+    
+    #L_prime, G_prime, H_prime, g_prime and h_prime are constants over time 
+    l_prime = func_l_prime_time(L, t, M0)
+    
+    #L, G, H, h are constants over time; g = aop0
+    l = func_l(l_prime)
+    
+    #a, e, i, aop are constants
+    om = func_raan(h_prime0, L_prime, l_prime, l0, H, L, M0)
+    M = func_M(l_prime, H_prime, L_prime, l0, H, L, M0)
+    
+    E = M_to_Eccen(M, e)
+    f = Eccen_to_f(E, e)
+    
+    r_scal = r_scal_using_a(a, e, f)
+    r_peri = r_vec_peri(r_scal, f)
+    R3w = R3_w(aop)
+    R1i = R1_i(i)
+    R3om = R3_om(om)
+    
+    cosmat_peri_to_geo  = peri_to_geo_cosmatrix(R3w, R1i, R3om)
+    
+    r_vec = r_geo_vec(cosmat_peri_to_geo, r_peri)
+    
+    r_vec_t = r_vec.tolist()
+    
+    r_vec_array.append(r_vec_t)
+
+#plot propagated orbit using a color map to show shift in orbit
+rxs = r_vec_array[:,0]
+rys = r_vec_array[:,1]
+rzs = r_vec_array[:,2]
+print(len(rxs), len(rys), len(rzs))
+
+clrmap = ['blue', 'green', 'yellow', 'orange', 'red']
+
+fig1, axs1 = plt.subplots(figsize = (10,10))
+axs1 = plt.axes(projection = '3d')
+axs1.view_init(35,30)
+axs1.set_xlabel('X/DU')
+axs1.set_ylabel('Y/DU')
+axs1.set_zlabel('Z/DU')
+axs1.set_title('CR3BP Propagated with Hamiltoninan in Delaunay Variables')
+V = np.array([[0.5,0,0], [0,0.5,0], [0,0,0.5]])
+origin = np.array([[0, 0, 0],[0, 0, 0], [0, 0, 0]]) # origin point
+plt.quiver(*origin, V[:,0], V[:,1], V[:,2], color = 'black', lw = 3)
+c=0
+for i in range(0,101,20):
+    axs1.plot(rxs[i:i+21], rys[i:i+21], rzs[i:i+21], color = clrmap[c])
+    print(i, i+21, c)
+    c=c+1
+axs1.plot(rxs, rys, rzs)
+plt.show()
