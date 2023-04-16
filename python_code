@@ -66,7 +66,7 @@ H_prime = H #EOM3
 def func_l_prime_time(L, t, M0): #EOM4
     l0 = M0
     l0_prime = func_l_prime(l0, H, L, M0)
-    return (1/(2*L**2))*(t - t0) + l0_prime
+    return -(1/(2*L**2))*(t - t0) + l0_prime
 
 def func_l(l_prime):
     l0 = M0
